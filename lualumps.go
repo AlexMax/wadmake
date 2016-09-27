@@ -38,7 +38,7 @@ var wadMethods = []lua.RegistryFunction{
 }
 
 func wadCreateLumps(l *lua.State) int {
-	l.PushUserData(Directory{})
+	l.PushUserData(&Directory{})
 	lua.SetMetaTableNamed(l, lumpsHandle)
 
 	return 1
@@ -74,7 +74,7 @@ func commonUnpackWAD(l *lua.State, r io.ReadSeeker) int {
 	}
 
 	// Lump data
-	l.PushUserData(wad.Lumps)
+	l.PushUserData(&wad.Lumps)
 	lua.SetMetaTableNamed(l, lumpsHandle)
 
 	// WAD type
@@ -91,9 +91,9 @@ func commonUnpackWAD(l *lua.State, r io.ReadSeeker) int {
 }
 
 var lumpsMethods = []lua.RegistryFunction{
-	{"find", lumpFind},
-	{"get", lumpGet},
-	{"insert", nil},
+	{"find", lumpsFind},
+	{"get", lumpsGet},
+	{"insert", lumpsInsert},
 	{"remove", nil},
 	{"set", nil},
 	{"packwad", nil},
@@ -103,8 +103,13 @@ var lumpsMethods = []lua.RegistryFunction{
 	{"__tostring", lumpsToString},
 }
 
-func lumpFind(l *lua.State) int {
-	data, _ := lua.CheckUserData(l, 1, lumpsHandle).(Directory)
+func lumpsFind(l *lua.State) int {
+	data, ok := lua.CheckUserData(l, 1, lumpsHandle).(*Directory)
+	if !ok {
+		lua.Errorf(l, "type asserion failed")
+	} else if data == nil {
+		lua.Errorf(l, "nil pointer")
+	}
 
 	name := lua.CheckString(l, 2)
 
@@ -123,10 +128,10 @@ func lumpFind(l *lua.State) int {
 		start = 1
 	} else if start < 0 {
 		// Negative values are from the end.
-		start = len(data) + start + 1
+		start = len(*data) + start + 1
 	}
 
-	if start > len(data) {
+	if start > len(*data) {
 		l.PushNil()
 		return 1
 	}
@@ -141,34 +146,86 @@ func lumpFind(l *lua.State) int {
 	return 1
 }
 
-func lumpGet(l *lua.State) int {
-	data, _ := lua.CheckUserData(l, 1, lumpsHandle).(Directory)
+func lumpsGet(l *lua.State) int {
+	data, ok := lua.CheckUserData(l, 1, lumpsHandle).(*Directory)
+	if !ok {
+		lua.Errorf(l, "type asserion failed")
+	} else if data == nil {
+		lua.Errorf(l, "nil pointer")
+	}
 
 	index := lua.CheckInteger(l, 2)
-	if index < 1 || index > len(data) {
+	if index < 1 || index > len(*data) {
 		l.PushNil()
 		return 1
 	}
 
-	l.PushString(data[index-1].Name)
-	l.PushString(string(data[index-1].Data))
+	l.PushString((*data)[index-1].Name)
+	l.PushString(string((*data)[index-1].Data))
 
 	return 2
 }
 
-func lumpsLen(l *lua.State) int {
-	data, _ := lua.CheckUserData(l, 1, lumpsHandle).(Directory)
-	l.PushInteger(len(data))
+func lumpsInsert(l *lua.State) int {
+	data, ok := lua.CheckUserData(l, 1, lumpsHandle).(*Directory)
+	if !ok {
+		lua.Errorf(l, "type asserion failed")
+	} else if data == nil {
+		lua.Errorf(l, "nil pointer")
+	}
 
+	if l.IsNumber(2) {
+		// Second parameter is index to push to
+		index := lua.CheckInteger(l, 2)
+		if index < 1 || index > len(*data) {
+			lua.ArgumentError(l, 2, "index out of range")
+		}
+
+		lump := Lump{
+			Name: lua.CheckString(l, 3),
+			Data: []byte(lua.CheckString(l, 4)),
+		}
+
+		*data = append(*data, Lump{})
+		copy((*data)[index:], (*data)[index-1:])
+		(*data)[index-1] = lump
+	} else {
+		// Append to end
+		lump := Lump{
+			Name: lua.CheckString(l, 2),
+			Data: []byte(lua.CheckString(l, 3)),
+		}
+		*data = append(*data, lump)
+	}
+
+	return 0
+}
+
+func lumpsLen(l *lua.State) int {
+	data, ok := lua.CheckUserData(l, 1, lumpsHandle).(*Directory)
+	if !ok {
+		lua.Errorf(l, "type asserion failed")
+	} else if data == nil {
+		lua.Errorf(l, "nil pointer")
+	}
+
+	l.PushInteger(len(*data))
 	return 1
 }
 
 func lumpsToString(l *lua.State) int {
-	data, _ := lua.CheckUserData(l, 1, lumpsHandle).(Directory)
-	if len(data) == 1 {
+	data, ok := lua.CheckUserData(l, 1, lumpsHandle).(*Directory)
+	if !ok {
+		lua.Errorf(l, "type asserion failed")
+	} else if data == nil {
+		lua.Errorf(l, "nil pointer")
+	}
+
+	dataLen := len(*data)
+	if dataLen == 1 {
 		l.PushFString("%s: %p, %d lump", lumpsHandle, data, 1)
 	} else {
-		l.PushFString("%s: %p, %d lumps", lumpsHandle, data, len(data))
+		l.PushFString("%s: %p, %d lumps", lumpsHandle, data, dataLen)
 	}
 	return 1
 }
