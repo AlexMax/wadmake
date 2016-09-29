@@ -199,3 +199,81 @@ func TestLumpsInsertAppend(t *testing.T) {
 		t.Error("incorrect lump count")
 	}
 }
+
+func TestLumpsRemove(t *testing.T) {
+	l := readWad(t)
+
+	lua.DoString(l, "lumps:remove(1);return lumps:get(1)")
+
+	if l.Top() != 2 {
+		t.Fatal("incorrect stack size")
+	}
+
+	if lua.CheckString(l, -2) != "THINGS" {
+		t.Error("incorrect lump name")
+	}
+
+	if len(lua.CheckString(l, -1))%10 != 0 {
+		t.Error("incorrect lump data length")
+	}
+
+	lua.DoString(l, "return lumps")
+
+	if lua.LengthEx(l, -1) != 10 {
+		t.Error("incorrect lump count")
+	}
+}
+
+func TestLumpsSet(t *testing.T) {
+	l := readWad(t)
+
+	lua.DoString(l, "lumps:set(1, 'MAP02', 'hissy');return lumps:get(1)")
+
+	if l.Top() != 2 {
+		t.Fatal("incorrect stack size")
+	}
+
+	if lua.CheckString(l, -2) != "MAP02" {
+		t.Error("incorrect lump name")
+	}
+
+	if lua.CheckString(l, -1) != "hissy" {
+		t.Error("incorrect lump data")
+	}
+}
+
+func TestLumpsSetName(t *testing.T) {
+	l := readWad(t)
+
+	lua.DoString(l, "lumps:set(1, 'MAP02');return lumps:get(1)")
+
+	if l.Top() != 2 {
+		t.Fatal("incorrect stack size")
+	}
+
+	if lua.CheckString(l, -2) != "MAP02" {
+		t.Error("incorrect lump name")
+	}
+
+	if lua.CheckString(l, -1) != "" {
+		t.Error("incorrect lump data")
+	}
+}
+
+func TestLumpsSetValue(t *testing.T) {
+	l := readWad(t)
+
+	lua.DoString(l, "lumps:set(1, nil, 'hissy');return lumps:get(1)")
+
+	if l.Top() != 2 {
+		t.Fatal("incorrect stack size")
+	}
+
+	if lua.CheckString(l, -2) != "MAP01" {
+		t.Error("incorrect lump name")
+	}
+
+	if lua.CheckString(l, -1) != "hissy" {
+		t.Error("incorrect lump data")
+	}
+}

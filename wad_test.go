@@ -20,6 +20,7 @@
 package wadmake
 
 import (
+	"bytes"
 	"os"
 	"testing"
 )
@@ -53,5 +54,53 @@ func TestWadDecode(t *testing.T) {
 	// THINGS lump is 10 bytes per THING
 	if len(wad.Lumps[1].Data)%10 != 0 {
 		t.Error("incorrect lump data length in decoded WAD file")
+	}
+}
+
+func TestWadEncode(t *testing.T) {
+	wad := NewWad(WadTypePWAD)
+
+	wad.Lumps = append(wad.Lumps, Lump{
+		Name: "TEST",
+		Data: []byte("hissy"),
+	})
+	wad.Lumps = append(wad.Lumps, Lump{
+		Name: "TESTTWO",
+		Data: []byte("god only knows"),
+	})
+
+	var buffer bytes.Buffer
+	err := Encode(&buffer, wad)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+
+	expected := []byte{
+		// "PWAD"
+		0x50, 0x57, 0x41, 0x44,
+		// Number of lumps
+		0x2, 0x0, 0x0, 0x0,
+		// Location of infotable
+		0x1f, 0x0, 0x0, 0x0,
+		// "hissy" (Data start)
+		0x68, 0x69, 0x73, 0x73, 0x79,
+		// "god only knows"
+		0x67, 0x6f, 0x64, 0x20, 0x6f, 0x6e, 0x6c, 0x79, 0x20, 0x6b, 0x6e, 0x6f, 0x77, 0x73,
+		// Lump location (Infotable start)
+		0xc, 0x0, 0x0, 0x0,
+		// Lump size
+		0x5, 0x0, 0x0, 0x0,
+		// "TEST"
+		0x54, 0x45, 0x53, 0x54, 0x0, 0x0, 0x0, 0x0,
+		// Lump location
+		0x11, 0x0, 0x0, 0x0,
+		// Lump size
+		0xe, 0x0, 0x0, 0x0,
+		// "TESTTWO"
+		0x54, 0x45, 0x53, 0x54, 0x54, 0x57, 0x4f, 0x0,
+	}
+
+	if !bytes.Equal(expected, buffer.Bytes()) {
+		t.Error("encoded WAD does not match expected")
 	}
 }

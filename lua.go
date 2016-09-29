@@ -32,6 +32,8 @@ func wadOpen(l *lua.State) int {
 	return 1
 }
 
+// NewLuaEnvironment creates a new lua.State with all standard
+// libraries available, in addition to the wad library.
 func NewLuaEnvironment() *lua.State {
 	l := lua.NewState()
 
@@ -43,6 +45,8 @@ func NewLuaEnvironment() *lua.State {
 	return l
 }
 
+// LuaDebugStack outputs the top of the stack and the contents of every
+// location in the stack.  This is purely a debugging tool.
 func LuaDebugStack(state *lua.State) {
 	top := state.Top()
 	fmt.Printf("Top: %d\n", top)

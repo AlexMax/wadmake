@@ -19,11 +19,13 @@
 
 package wadmake
 
+// Lump is a filename and associated data located in a WAD or ZIP file.
 type Lump struct {
 	Name string
 	Data []byte
 }
 
+// Directory is an ordered array of Lumps.
 type Directory []Lump
 
 // Search searches for a specific lump by name and returns its position

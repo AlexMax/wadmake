@@ -26,18 +26,27 @@ import (
 	"io"
 )
 
+// WadType designates the type of WAD file a WAD is.
 type WadType int
 
 const (
+	// WadTypeIWAD designates an IWAD, a WAD file that is considered
+	// the primary resource file for the game.
 	WadTypeIWAD WadType = iota
+
+	// WadTypePWAD designates a PWAD, or a WAD file that is "patched"
+	// on top of other resources.
 	WadTypePWAD
 )
 
+// Wad is a stucture that contains all the data necessary to marshall
+// a WAD file.
 type Wad struct {
 	WadType WadType
 	Lumps   Directory
 }
 
+// NewWad creates a new Wad structure.
 func NewWad(wadType WadType) *Wad {
 	wad := &Wad{}
 	wad.WadType = wadType
@@ -46,6 +55,8 @@ func NewWad(wadType WadType) *Wad {
 	return wad
 }
 
+// Decode decodes WAD file data passed into the reader into a Wad
+// structure.
 func Decode(r io.ReadSeeker) (*Wad, error) {
 	// WAD identifier
 	var identifier [4]byte
@@ -162,6 +173,114 @@ func Decode(r io.ReadSeeker) (*Wad, error) {
 	return wad, nil
 }
 
+// Encode encodes the passed Wad structure into WAD file data.
 func Encode(w io.Writer, wad *Wad) error {
+	const maxInt32 = 2147483647
+	const headerOffset = 12
+
+	var n int
+	var err error
+
+	// Write header
+	switch wad.WadType {
+	case WadTypeIWAD:
+		n, err = w.Write([]byte("IWAD"))
+	case WadTypePWAD:
+		n, err = w.Write([]byte("PWAD"))
+	default:
+		return errors.New("could not write header of unknown wad type")
+	}
+
+	if err != nil {
+		return err
+	} else if n < 4 {
+		return errors.New("could not write header")
+	}
+
+	var alldata bytes.Buffer
+	var infotable bytes.Buffer
+
+	for i := 0; i < len(wad.Lumps); i++ {
+		// Write lump position
+		alldatapos := int64(alldata.Len()) + headerOffset
+		if alldatapos > maxInt32 {
+			return errors.New("could not write lump position")
+		}
+		err = binary.Write(&infotable, binary.LittleEndian, int32(alldatapos))
+		if err != nil {
+			return err
+		}
+
+		// Write lump data
+		n, err = alldata.Write(wad.Lumps[i].Data)
+		if err != nil {
+			return err
+		} else if n < len(wad.Lumps[i].Data) {
+			return errors.New("could not write lump data")
+		}
+
+		// Write lump size
+		dataSize := int64(len(wad.Lumps[i].Data))
+		if dataSize > maxInt32 {
+			return errors.New("could not write lump size")
+		}
+		err := binary.Write(&infotable, binary.LittleEndian, int32(dataSize))
+		if err != nil {
+			return err
+		}
+
+		// Write lump name.  Lump names are a maximum of 8 characters,
+		// and any shorter names must end with a null terminator.
+		if len(wad.Lumps[i].Name) > 8 {
+			return errors.New("lump name is too long")
+		}
+		var namebuffer [8]byte
+		n := copy(namebuffer[:], wad.Lumps[i].Name)
+		if n < len(wad.Lumps[i].Name) {
+			return errors.New("could not copy lump name")
+		}
+		n, err = infotable.Write(namebuffer[:])
+		if err != nil {
+			return err
+		} else if n < len(namebuffer) {
+			return errors.New("could not write lump name")
+		}
+	}
+
+	// Write number of lumps
+	if len(wad.Lumps) > maxInt32 {
+		return errors.New("too many lumps")
+	}
+	err = binary.Write(w, binary.LittleEndian, int32(len(wad.Lumps)))
+	if err != nil {
+		return err
+	}
+
+	// Write offset of infotable
+	alldatapos := int64(alldata.Len()) + headerOffset
+	if alldatapos > maxInt32 {
+		return errors.New("invalid infotable offset")
+	}
+	err = binary.Write(w, binary.LittleEndian, int32(alldatapos))
+	if err != nil {
+		return err
+	}
+
+	// Write data
+	n, err = w.Write(alldata.Bytes())
+	if err != nil {
+		return err
+	} else if n < alldata.Len() {
+		return errors.New("could not write data")
+	}
+
+	// Write infotable
+	n, err = w.Write(infotable.Bytes())
+	if err != nil {
+		return err
+	} else if n < infotable.Len() {
+		return errors.New("could not write infotable")
+	}
+
 	return nil
 }

@@ -37,6 +37,7 @@ var wadMethods = []lua.RegistryFunction{
 	{"unpackzip", nil},
 }
 
+// Create empty Lumps userdata
 func wadCreateLumps(l *lua.State) int {
 	l.PushUserData(&Directory{})
 	lua.SetMetaTableNamed(l, lumpsHandle)
@@ -94,23 +95,30 @@ var lumpsMethods = []lua.RegistryFunction{
 	{"find", lumpsFind},
 	{"get", lumpsGet},
 	{"insert", lumpsInsert},
-	{"remove", nil},
-	{"set", nil},
+	{"remove", lumpsRemove},
+	{"set", lumpsSet},
 	{"packwad", nil},
 	{"packzip", nil},
-	{"__gc", nil},
 	{"__len", lumpsLen},
 	{"__tostring", lumpsToString},
 }
 
-func lumpsFind(l *lua.State) int {
-	data, ok := lua.CheckUserData(l, 1, lumpsHandle).(*Directory)
+// Checks for Lumps userdata at a specific stack index, usually 1.
+func checkLumps(l *lua.State, index int) *Directory {
+	data, ok := lua.CheckUserData(l, index, lumpsHandle).(*Directory)
 	if !ok {
 		lua.Errorf(l, "type asserion failed")
 	} else if data == nil {
 		lua.Errorf(l, "nil pointer")
 	}
 
+	return data
+}
+
+// Finds a lump by name, optionally starting in the middle.  Returns
+// the location of the lump, or nil if not found.
+func lumpsFind(l *lua.State) int {
+	data := checkLumps(l, 1)
 	name := lua.CheckString(l, 2)
 
 	// Use a start parameter if we pass it, otherwise the default index
@@ -146,14 +154,9 @@ func lumpsFind(l *lua.State) int {
 	return 1
 }
 
+// Returns a lump name and raw data, or nil if nothing was found.
 func lumpsGet(l *lua.State) int {
-	data, ok := lua.CheckUserData(l, 1, lumpsHandle).(*Directory)
-	if !ok {
-		lua.Errorf(l, "type asserion failed")
-	} else if data == nil {
-		lua.Errorf(l, "nil pointer")
-	}
-
+	data := checkLumps(l, 1)
 	index := lua.CheckInteger(l, 2)
 	if index < 1 || index > len(*data) {
 		l.PushNil()
@@ -166,13 +169,9 @@ func lumpsGet(l *lua.State) int {
 	return 2
 }
 
+// Insert lump data into the directory.
 func lumpsInsert(l *lua.State) int {
-	data, ok := lua.CheckUserData(l, 1, lumpsHandle).(*Directory)
-	if !ok {
-		lua.Errorf(l, "type asserion failed")
-	} else if data == nil {
-		lua.Errorf(l, "nil pointer")
-	}
+	data := checkLumps(l, 1)
 
 	if l.IsNumber(2) {
 		// Second parameter is index to push to
@@ -201,25 +200,82 @@ func lumpsInsert(l *lua.State) int {
 	return 0
 }
 
-func lumpsLen(l *lua.State) int {
-	data, ok := lua.CheckUserData(l, 1, lumpsHandle).(*Directory)
-	if !ok {
-		lua.Errorf(l, "type asserion failed")
-	} else if data == nil {
-		lua.Errorf(l, "nil pointer")
+// Remove lump data from the directory.
+func lumpsRemove(l *lua.State) int {
+	data := checkLumps(l, 1)
+
+	// Second parameter is index to remove from
+	index := lua.CheckInteger(l, 2)
+	if index < 1 || index > len(*data) {
+		lua.ArgumentError(l, 2, "index out of range")
 	}
 
+	*data = append((*data)[:index-1], (*data)[index:]...)
+
+	return 0
+}
+
+// Set lump data at a specific point in the directory.  You can omit
+// the name or data but not both.
+func lumpsSet(l *lua.State) int {
+	data := checkLumps(l, 1)
+
+	// Second parameter is index to set
+	index := lua.CheckInteger(l, 2)
+	if index < 1 || index > len(*data) {
+		lua.ArgumentError(l, 2, "index out of range")
+	}
+
+	nametype := l.TypeOf(3)
+	datatype := l.TypeOf(4)
+
+	// Name is string if present, nil if not
+	if nametype != lua.TypeString && nametype != lua.TypeNil {
+		lua.ArgumentError(l, 3, "must be string or nil")
+	}
+
+	// Data is string if present, nil if not
+	if datatype != lua.TypeString && datatype != lua.TypeNone {
+		lua.ArgumentError(l, 4, "must be string, if present")
+	}
+
+	if nametype == lua.TypeNil || datatype == lua.TypeNone {
+		// If one of the parameters is missing, we need the original
+		if nametype == lua.TypeString {
+			lname, _ := l.ToString(3)
+			(*data)[index-1].Name = lname
+		}
+
+		if datatype == lua.TypeString {
+			ldata, _ := l.ToString(4)
+			(*data)[index-1].Data = []byte(ldata)
+		}
+	} else {
+		// Both parameters, so a brand new lump.
+		lname, _ := l.ToString(3)
+		ldata, _ := l.ToString(4)
+
+		lump := Lump{
+			Name: lname,
+			Data: []byte(ldata),
+		}
+
+		(*data)[index-1] = lump
+	}
+
+	return 0
+}
+
+// Length of directory.
+func lumpsLen(l *lua.State) int {
+	data := checkLumps(l, 1)
 	l.PushInteger(len(*data))
 	return 1
 }
 
+// A nice way of printing the Lumps userdata.
 func lumpsToString(l *lua.State) int {
-	data, ok := lua.CheckUserData(l, 1, lumpsHandle).(*Directory)
-	if !ok {
-		lua.Errorf(l, "type asserion failed")
-	} else if data == nil {
-		lua.Errorf(l, "nil pointer")
-	}
+	data := checkLumps(l, 1)
 
 	dataLen := len(*data)
 	if dataLen == 1 {
@@ -230,23 +286,25 @@ func lumpsToString(l *lua.State) int {
 	return 1
 }
 
-func WadLumpsOpen(state *lua.State) error {
+// WadLumpsOpen adds all lump-related functions to the table located at
+// the top of the stack of the pased lua state.
+func WadLumpsOpen(l *lua.State) error {
 	// [wadlib] Set global wad functions.
-	lua.SetFunctions(state, wadMethods, 0)
+	lua.SetFunctions(l, wadMethods, 0)
 
 	// Create the Lumps userdata with associated functions.
-	ok := lua.NewMetaTable(state, lumpsHandle)
+	ok := lua.NewMetaTable(l, lumpsHandle)
 	if !ok {
 		return errors.New("could not create Lumps metatable")
 	}
 
 	// [wadlib][Lumpsmeta]
-	state.PushValue(-1)
+	l.PushValue(-1)
 	// [wadlib][Lumpsmeta][Lumpsmeta]
-	state.SetField(-2, "__index")
+	l.SetField(-2, "__index")
 	// [wadlib][Lumpsmeta]
-	lua.SetFunctions(state, lumpsMethods, 0)
-	state.Pop(1)
+	lua.SetFunctions(l, lumpsMethods, 0)
+	l.Pop(1)
 	// [wadlib]
 
 	return nil
