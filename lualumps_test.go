@@ -20,6 +20,10 @@
 package wadmake
 
 import (
+	"bytes"
+	"fmt"
+	"io/ioutil"
+	"os"
 	"testing"
 
 	lua "github.com/Shopify/go-lua"
@@ -200,6 +204,47 @@ func TestLumpsInsertAppend(t *testing.T) {
 	}
 }
 
+func TestLumpsPackWAD(t *testing.T) {
+	l := NewLuaEnvironment()
+
+	lua.DoString(l, "lumps = wad.createLumps()")
+	lua.DoString(l, "lumps:insert('TEST', 'hissy');lumps:insert('TESTTWO', 'god only knows')")
+	lua.DoString(l, "return lumps:packwad()")
+
+	if l.Top() != 1 {
+		t.Fatal("incorrect stack size")
+	}
+
+	expected := []byte{
+		// "PWAD"
+		0x50, 0x57, 0x41, 0x44,
+		// Number of lumps
+		0x2, 0x0, 0x0, 0x0,
+		// Location of infotable
+		0x1f, 0x0, 0x0, 0x0,
+		// "hissy" (Data start)
+		0x68, 0x69, 0x73, 0x73, 0x79,
+		// "god only knows"
+		0x67, 0x6f, 0x64, 0x20, 0x6f, 0x6e, 0x6c, 0x79, 0x20, 0x6b, 0x6e, 0x6f, 0x77, 0x73,
+		// Lump location (Infotable start)
+		0xc, 0x0, 0x0, 0x0,
+		// Lump size
+		0x5, 0x0, 0x0, 0x0,
+		// "TEST"
+		0x54, 0x45, 0x53, 0x54, 0x0, 0x0, 0x0, 0x0,
+		// Lump location
+		0x11, 0x0, 0x0, 0x0,
+		// Lump size
+		0xe, 0x0, 0x0, 0x0,
+		// "TESTTWO"
+		0x54, 0x45, 0x53, 0x54, 0x54, 0x57, 0x4f, 0x0,
+	}
+
+	if lua.CheckString(l, -1) != string(expected) {
+		t.Error("incorrect wad data")
+	}
+}
+
 func TestLumpsRemove(t *testing.T) {
 	l := readWad(t)
 
@@ -275,5 +320,70 @@ func TestLumpsSetValue(t *testing.T) {
 
 	if lua.CheckString(l, -1) != "hissy" {
 		t.Error("incorrect lump data")
+	}
+}
+
+func TestLumpsWriteWAD(t *testing.T) {
+	// Create temporary file for our test.
+	fh, err := ioutil.TempFile("", "wadmake")
+	if err != nil {
+		t.Fatalf("could not create temporary file (%s)", err.Error())
+	}
+
+	filename := fh.Name()
+	defer func() {
+		// No matter when we die, delete the file.
+		os.Remove(filename)
+	}()
+
+	err = fh.Close()
+	if err != nil {
+		t.Fatal("could not close temporary file (%s)", err.Error())
+	}
+
+	// Write out to the temporary file.
+	l := NewLuaEnvironment()
+
+	lua.DoString(l, "lumps = wad.createLumps()")
+	lua.DoString(l, "lumps:insert('TEST', 'hissy');lumps:insert('TESTTWO', 'god only knows')")
+	lua.DoString(l, fmt.Sprintf("return lumps:writewad('%s')", filename))
+
+	if l.Top() != 0 {
+		t.Fatal("incorrect stack size")
+	}
+
+	// Compare the temporary file contents on disk with expected.
+	actual, err := ioutil.ReadFile(filename)
+	if err != nil {
+		t.Fatalf("could not reread temporary file (%s)", err.Error())
+	}
+
+	expected := []byte{
+		// "PWAD"
+		0x50, 0x57, 0x41, 0x44,
+		// Number of lumps
+		0x2, 0x0, 0x0, 0x0,
+		// Location of infotable
+		0x1f, 0x0, 0x0, 0x0,
+		// "hissy" (Data start)
+		0x68, 0x69, 0x73, 0x73, 0x79,
+		// "god only knows"
+		0x67, 0x6f, 0x64, 0x20, 0x6f, 0x6e, 0x6c, 0x79, 0x20, 0x6b, 0x6e, 0x6f, 0x77, 0x73,
+		// Lump location (Infotable start)
+		0xc, 0x0, 0x0, 0x0,
+		// Lump size
+		0x5, 0x0, 0x0, 0x0,
+		// "TEST"
+		0x54, 0x45, 0x53, 0x54, 0x0, 0x0, 0x0, 0x0,
+		// Lump location
+		0x11, 0x0, 0x0, 0x0,
+		// Lump size
+		0xe, 0x0, 0x0, 0x0,
+		// "TESTTWO"
+		0x54, 0x45, 0x53, 0x54, 0x54, 0x57, 0x4f, 0x0,
+	}
+
+	if !bytes.Equal(expected, actual) {
+		t.Error("incorrect wad data")
 	}
 }

@@ -20,6 +20,7 @@
 package wadmake
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"os"
@@ -95,10 +96,12 @@ var lumpsMethods = []lua.RegistryFunction{
 	{"find", lumpsFind},
 	{"get", lumpsGet},
 	{"insert", lumpsInsert},
+	{"packwad", lumpsPackWAD},
+	{"packzip", nil},
 	{"remove", lumpsRemove},
 	{"set", lumpsSet},
-	{"packwad", nil},
-	{"packzip", nil},
+	{"writewad", lumpsWriteWAD},
+	{"writezip", nil},
 	{"__len", lumpsLen},
 	{"__tostring", lumpsToString},
 }
@@ -200,6 +203,27 @@ func lumpsInsert(l *lua.State) int {
 	return 0
 }
 
+// Pack WAD file into string.
+func lumpsPackWAD(l *lua.State) int {
+	data := checkLumps(l, 1)
+
+	// Create WAD structure
+	wad := NewWad(WadTypePWAD)
+	wad.Lumps = *data
+
+	// Write into bytebuffer
+	buffer := bytes.Buffer{}
+	err := Encode(&buffer, wad)
+	if err != nil {
+		lua.Errorf(l, "could not encode data (%s)", err.Error())
+	}
+
+	// Return bytebuffer
+	l.PushString(buffer.String())
+
+	return 1
+}
+
 // Remove lump data from the directory.
 func lumpsRemove(l *lua.State) int {
 	data := checkLumps(l, 1)
@@ -261,6 +285,30 @@ func lumpsSet(l *lua.State) int {
 		}
 
 		(*data)[index-1] = lump
+	}
+
+	return 0
+}
+
+// Write WAD file to disk.
+func lumpsWriteWAD(l *lua.State) int {
+	data := checkLumps(l, 1)
+	filename := lua.CheckString(l, 2)
+
+	// Create WAD structure
+	wad := NewWad(WadTypePWAD)
+	wad.Lumps = *data
+
+	// Open file
+	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+	if err != nil {
+		lua.Errorf(l, "could not open file (%s)", err.Error())
+	}
+
+	// Write into file
+	err = Encode(file, wad)
+	if err != nil {
+		lua.Errorf(l, "could not encode data (%s)", err.Error())
 	}
 
 	return 0
